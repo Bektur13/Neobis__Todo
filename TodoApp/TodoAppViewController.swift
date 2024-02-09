@@ -7,17 +7,16 @@
 
 import UIKit
 
-class TodoAppViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 10
-    }
-    
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        return UITableViewCell()
-    }
-    
-    
+protocol TaskCellDelegate: AnyObject {
+    func taskCellDidToggleDone(for cell: CustomTableViewCell)
+}
+
+class TodoAppViewController: UIViewController {
     var tableView = UITableView()
+    var dataManager = DataManager.shared
+    var isNew: Bool = true
+    var task: TaskModel?
+    var index: Int?
     
     lazy var label: UILabel = {
         let label = UILabel()
@@ -33,12 +32,13 @@ class TodoAppViewController: UIViewController, UITableViewDataSource, UITableVie
     
     lazy var table: UITableView = {
         let table = UITableView()
-//        table.register(TaskCell.self, forCellReuseIdentifier: "CellIdentifier")
+        table.register(CustomTableViewCell.self, forCellReuseIdentifier: "CustomCell")
         table.tableHeaderView = UIView()
         table.dataSource = self
         table.delegate = self
         table.sectionFooterHeight = 100
-        return tableView
+        table.rowHeight = 50
+        return table
     }()
     
     lazy var addButton: UIButton = {
@@ -70,6 +70,7 @@ class TodoAppViewController: UIViewController, UITableViewDataSource, UITableVie
         let button = UIButton()
         button.setTitle("Save", for: .normal)
         button.setTitleColor(.blue, for: .normal)
+        button.addTarget(self, action: #selector(saveButtonTapped), for: .touchUpInside)
         return button
     }()
     
@@ -114,21 +115,21 @@ class TodoAppViewController: UIViewController, UITableViewDataSource, UITableVie
     
     func setUpConstraints() {
         // MAIN PAGE
-        view.addSubview(table)
-        table.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            table.topAnchor.constraint(equalTo: view.topAnchor),
-            table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            table.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        
         view.addSubview(label)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = label.font.withSize(30)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             label.topAnchor.constraint(equalTo: view.topAnchor, constant: 100)
+        ])
+        
+        view.addSubview(table)
+        table.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            table.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 20),
+            table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            table.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
         view.addSubview(addButton)
@@ -186,6 +187,98 @@ class TodoAppViewController: UIViewController, UITableViewDataSource, UITableVie
             deleteButton.bottomAnchor.constraint(equalTo: secondView.view.bottomAnchor, constant: -50),
             deleteButton.centerXAnchor.constraint(equalTo: secondView.view.centerXAnchor)
         ])
+        inputTask.text = task?.title
+        inputDescription.text = task?.description
+        if !isNew {
+            inputTask.isHidden = true
+            inputDescription.isHidden = true
+        } else {
+            deleteButton.isHidden = true
+        }
     }
     
+    @objc func saveButtonTapped() {
+        if self.isNew {
+            dataManager.tasks.append(TaskModel(title: inputTask.text!, description: inputDescription.text, isDone: false))
+        } else {
+            if let i = index {
+                dataManager.tasks[i] = TaskModel(title: inputTask.text!, description: inputDescription.text, isDone: task?.isDone ?? false)
+            }
+        }
+        dataManager.refreshData()
+        dismiss(animated: true)
+        }
+    }
+    
+//    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+//        return DataManager.shared.dataManager.count
+//    }}
+//
+//func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+//    let cell = tableView.dequeueReusableCell(withIdentifier: "CustomCell", for: indexPath) as! CustomTableViewCell
+//    return cell
+//}
+    
+
+
+extension TodoAppViewController: UITableViewDataSource, UITableViewDelegate, TaskCellDelegate{
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return dataManager.getCount()
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "CustomCell", for: indexPath) as! CustomTableViewCell
+        cell.delegate = self
+        cell.configureCell(title: dataManager.tasks[indexPath.row].title, description: dataManager.tasks[indexPath.row].description, isDone: dataManager.tasks[indexPath.row].isDone, image:  (dataManager.tasks[indexPath.row].isDone ? "checkmark.circle" : "circle"))
+        return cell
+    }
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        return UITableView.automaticDimension
+    }
+    
+    func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if indexPath.row == dataManager.tasks.count - 1 {
+            cell.separatorInset.left = cell.bounds.size.width
+        }
+    }
+    
+//    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+//        isNew = false
+//        
+//        let task = TaskModel(title: dataManager.tasks[indexPath.row].title, description: dataManager.tasks[indexPath.row].description, isDone: dataManager.tasks[indexPath.row].isDone)
+////        let vc = UINavigationController(rootViewController: TodoAppViewController)
+////        vc.modalPresentationStyle = .fullScreen
+////        present(vc, animated: true)
+//    }
+    
+    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        if editingStyle == .delete {
+            dataManager.removeTask(index: indexPath.row)
+            tableView.deleteRows(at: [indexPath], with: .fade)
+        }
+    }
+    
+    func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        return true
+    }
+    
+    func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        dataManager.moveTask(from: sourceIndexPath.row, into: destinationIndexPath.row)
+    }
+    
+//    func taskCellDidToggleDone(for cell: TaskCell) {
+//        if let indexPath = tableView.indexPath(for: cell) {
+//            dataManager.toggleDone(index: indexPath.row, isDone: cell.doneTask)
+//            tableView.reloadRows(at: [indexPath], with: .none)
+//            dataManager.refreshData()
+//        }
+//    }
+    
+    func taskCellDidToggleDone(for cell: CustomTableViewCell) {
+        if let indexPath = tableView.indexPath(for: cell) {
+            dataManager.toggleDone(index: indexPath.row, isDone: cell.doneTask)
+            tableView.reloadRows(at: [indexPath], with: .none)
+            dataManager.refreshData()
+        }
+    }
 }
